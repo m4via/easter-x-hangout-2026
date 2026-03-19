@@ -434,8 +434,8 @@ textarea.ti{resize:vertical}
 </div>
 
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
-import { getDatabase, ref, onValue, set, update, remove, get } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-database.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, onValue, set, update, remove, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAYWHzv1qvA5EGDfJSmOhWjUdRlDFHfcVM",
@@ -677,28 +677,37 @@ function fbRemove(path){ setSyncStatus('saving'); remove(ref(db, path)).then(()=
 
 // ── INIT: seed if empty, then listen ─────────────────────────────
 async function init(){
-  const snap = await get(ref(db, '/'));
-  if(!snap.exists()){
-    await set(ref(db, '/'), defaultData);
-  } else {
-    // Patch any missing sections for existing databases
-    const existing = snap.val();
-    const patches = {};
-    if(!existing.logistics) patches.logistics = defaultData.logistics;
-    if(Object.keys(patches).length > 0) await update(ref(db,'/'), patches);
+  try {
+    document.getElementById('sync-label').textContent = 'Connecting…';
+    const snap = await get(ref(db, '/'));
+    if(!snap.exists()){
+      await set(ref(db, '/'), defaultData);
+    } else {
+      const existing = snap.val();
+      const patches = {};
+      if(!existing.logistics) patches.logistics = defaultData.logistics;
+      if(Object.keys(patches).length > 0) await update(ref(db,'/'), patches);
+    }
+    // Listen to full state
+    onValue(ref(db, '/'), (snapshot)=>{
+      state = snapshot.val();
+      if(!state.budget) state.budget = {total:'',items:{}};
+      if(!state.budget.items) state.budget.items = {};
+      document.getElementById('loading-screen').style.display='none';
+      document.getElementById('app').style.display='flex';
+      setSyncStatus('live');
+      refreshCurrentTab();
+      updateSidebar();
+      buildListNav();
+    });
+  } catch(err) {
+    document.getElementById('loading-screen').innerHTML =
+      '<div style="text-align:center;padding:2rem;color:#f07070;font-family:Mulish,sans-serif">' +
+      '<div style="font-size:18px;font-weight:600;margin-bottom:8px">Connection error</div>' +
+      '<div style="font-size:13px;opacity:.8;max-width:360px">' + err.message + '</div>' +
+      '<div style="font-size:11px;margin-top:12px;opacity:.5">Check Firebase database rules are set to test mode</div>' +
+      '</div>';
   }
-  // Listen to full state
-  onValue(ref(db, '/'), (snapshot)=>{
-    state = snapshot.val();
-    if(!state.budget) state.budget = {total:'',items:{}};
-    if(!state.budget.items) state.budget.items = {};
-    document.getElementById('loading-screen').style.display='none';
-    document.getElementById('app').style.display='flex';
-    setSyncStatus('live');
-    refreshCurrentTab();
-    updateSidebar();
-    buildListNav();
-  });
 }
 init();
 
