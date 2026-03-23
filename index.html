@@ -748,7 +748,7 @@ function buildListNav(){
         <div class="ph-left">
           <div class="pt" style="display:flex;align-items:center;gap:8px">
             <span>${l.emoji||'📝'}</span>
-            <span contenteditable="true" style="outline:none;cursor:text" onblur="renameList('${l.id}',this.textContent)">${l.name}</span>
+            <span style="cursor:pointer" onclick="openRenameList('${l.id}',this)">${l.name}</span>
           </div>
           <div class="ps">Click task text to edit &middot; hover for urgency &amp; delete</div>
         </div>
@@ -869,7 +869,7 @@ function renderList(tabId){
     html+=`<div class="tr" style="flex-direction:column;align-items:stretch;padding:8px 4px;gap:0">
       <div style="display:flex;align-items:flex-start;gap:8px">
         <div class="chk ${t.done?'done':''}" onclick="toggleTask('${lid}','${t.id}')" style="margin-top:2px;flex-shrink:0"></div>
-        <div class="tr-body" style="flex:1"><span class="tr-text ${t.done?'done':''}" contenteditable="true" onblur="editTaskText('${lid}','${t.id}',this.textContent)">${t.text}</span>${tag}</div>
+        <div class="tr-body" style="flex:1;cursor:pointer" onclick="openEditTask('${lid}','${t.id}')"><span class="tr-text ${t.done?'done':''}">${t.text}</span>${tag}</div>
         <div class="tr-acts" style="display:flex;gap:3px;flex-shrink:0">
           <button class="ic-btn" onclick="openEditTask('${lid}','${t.id}')" title="Edit details">✎</button>
           <button class="ic-btn r" onclick="deleteTask('${lid}','${t.id}')">✕</button>
@@ -912,6 +912,20 @@ window.quickAdd = function(lid){
 };
 window.renameList = function(lid,name){
   if(name.trim()) fbUpdate(`lists/${lid}`, {name:name.trim()});
+};
+window.openRenameList = function(lid, el){
+  const l = (state.lists||{})[lid]; if(!l) return;
+  document.getElementById('m-list-title').textContent = 'Rename list';
+  document.getElementById('il-name').value = l.name;
+  document.getElementById('il-emoji').value = l.emoji||'';
+  document.getElementById('ml-ok').onclick = function(){
+    const name = document.getElementById('il-name').value.trim(); if(!name) return;
+    const emoji = document.getElementById('il-emoji').value.trim()||'📝';
+    fbUpdate('lists/'+lid, {name, emoji});
+    closeM();
+  };
+  openM('m-list');
+  setTimeout(()=>document.getElementById('il-name').focus(),50);
 };
 window.deleteList = function(lid){
   if(!confirm('Delete this list and all its tasks?')) return;
@@ -992,7 +1006,7 @@ function renderTimeline(){
       </div>
       <div class="tl-card">
         <div class="tl-ch">
-          <div class="tl-ct"><span contenteditable="true" style="outline:none" onblur="editMSField('${ms.id}','title',this.textContent)">${ms.title}</span></div>
+          <div class="tl-ct"><span style="cursor:pointer" onclick="openMS(\'${ms.id}\')">${ms.title}</span></div>
           <div class="tl-acts">
             <select style="background:${scol[ms.status]}1a;color:${scol[ms.status]};border:none;cursor:pointer;font-size:10px;font-weight:700;font-family:'Mulish',sans-serif;outline:none;border-radius:20px;padding:2px 6px" onchange="setMSStatus('${ms.id}',this.value)">
               <option value="upcoming" ${ms.status==='upcoming'?'selected':''}>Upcoming</option>
@@ -1005,7 +1019,7 @@ function renderTimeline(){
           </div>
         </div>
         <div class="tl-date"><input type="date" value="${ms.date}" style="background:none;border:none;color:var(--t3);font-size:11px;font-family:'Mulish',sans-serif;cursor:pointer;outline:none" onchange="editMSField('${ms.id}','date',this.value)"> &middot; ${fmtD}</div>
-        ${ms.note?`<div class="tl-note"><span contenteditable="true" style="outline:none" onblur="editMSField('${ms.id}','note',this.textContent)">${ms.note}</span></div>`:''}
+        ${ms.note?`<div class="tl-note"><span>${ms.note}</span></div>`:''}
       </div>
     </div>`;
   });
@@ -1042,7 +1056,7 @@ function renderVendors(){
   let html=vendors.map(v=>`
     <div class="vc">
       <div class="vc-head">
-        <div class="vc-name"><span contenteditable="true" style="outline:none" onblur="editV('${v.id}','name',this.textContent)">${v.name}</span></div>
+        <div class="vc-name"><span>${v.name}</span></div>
         <select class="ssel ${sc[v.status]||'sn'}" onchange="setVStatus('${v.id}',this.value)">
           <option value="needed" ${v.status==='needed'?'selected':''}>Not booked</option>
           <option value="pending" ${v.status==='pending'?'selected':''}>Pending</option>
@@ -1050,7 +1064,7 @@ function renderVendors(){
         </select>
         <div class="vc-acts"><button class="ic-btn r" onclick="deleteVendor('${v.id}')">✕</button></div>
       </div>
-      <div class="vc-cat"><span contenteditable="true" style="outline:none" onblur="editV('${v.id}','cat',this.textContent)">${v.cat}</span>${v.notes?' &middot; '+v.notes:''}</div>
+      <div class="vc-cat"><span>${v.cat}</span>${v.notes?' &middot; '+v.notes:''}</div>
       <div class="vc-fields">
         <input class="ti" placeholder="Contact name / number" value="${v.contact}" oninput="editV('${v.id}','contact',this.value)" style="flex:2;min-width:150px">
         <input class="ti" type="number" placeholder="Cost ($)" value="${v.cost}" oninput="editV('${v.id}','cost',this.value)" style="width:90px">
@@ -1102,7 +1116,7 @@ function renderBudget(){
 
   items.forEach(item=>{
     html+=`<tr>
-      <td><span contenteditable="true" style="outline:none" onblur="editBLabel('${item.id}',this.textContent)">${item.label}</span></td>
+      <td><span>${item.label}</span></td>
       <td><input class="ti" type="number" value="${item.est}" placeholder="0" onchange="editBItem('${item.id}','est',this.value)" style="width:85px;text-align:right"></td>
       <td><input class="ti" type="number" value="${item.act}" placeholder="0" onchange="editBItem('${item.id}','act',this.value)" style="width:85px;text-align:right"></td>
       <td class="bt-del"><button class="ic-btn r bt-del" onclick="deleteBItem('${item.id}')">✕</button></td>
@@ -1145,8 +1159,8 @@ function renderRunsheet(){
     html+=`<div class="card rs-day"><div class="rs-day-h"><div class="rs-day-title">${dn[d]}</div></div>`;
     items.forEach(r=>{
       html+=`<div class="rs-row">
-        <div class="rs-time"><span contenteditable="true" style="outline:none" onblur="editRun('${r.id}','time',this.textContent)">${r.time}</span></div>
-        <div class="rs-text"><span contenteditable="true" style="outline:none" onblur="editRun('${r.id}','text',this.textContent)">${r.text}</span></div>
+        <div class="rs-time"><span>${r.time}</span></div>
+        <div class="rs-text"><span style="cursor:pointer" onclick="openEditRunItem(\'${r.id}\')">${r.text}</span></div>
         <div class="rs-acts"><button class="ic-btn r" onclick="deleteRunItem('${r.id}')">✕</button></div>
       </div>`;
     });
@@ -1155,6 +1169,17 @@ function renderRunsheet(){
   document.getElementById('body-runsheet').innerHTML=html;
 }
 window.editRun=function(id,field,val){if(val.trim()){const u={};u[field]=val.trim();fbUpdate(`run/${id}`,u);}};
+window.openEditRunItem=function(id){
+  const r=(state.run||{})[id]; if(!r) return;
+  document.getElementById('ir-id').value=id;
+  document.getElementById('ir-day').value=r.day||1;
+  document.getElementById('ir-time').value=r.time||'';
+  document.getElementById('ir-text').value=r.text||'';
+  document.getElementById('ir-ok').textContent='Save';
+  document.getElementById('m-run-title').textContent='Edit item';
+  openM('m-run');
+  setTimeout(()=>document.getElementById('ir-time').focus(),50);
+};
 window.deleteRunItem=function(id){fbRemove(`run/${id}`);};
 window.openRunItem=function(day){
   document.getElementById('ir-day').value=day||1;
@@ -1163,8 +1188,9 @@ window.openRunItem=function(day){
 };
 window.saveRunItem=function(){
   const text=document.getElementById('ir-text').value.trim(); if(!text) return;
-  const id=uid('r');
-  fbSet(`run/${id}`,{id,day:parseInt(document.getElementById('ir-day').value),time:document.getElementById('ir-time').value||'–',text});
+  const eid=document.getElementById('ir-id').value;
+  const id=eid||uid('r');
+  fbSet('run/'+id,{id,day:parseInt(document.getElementById('ir-day').value),time:document.getElementById('ir-time').value||'–',text});
   closeM();
 };
 
