@@ -408,7 +408,21 @@ textarea.ti{resize:vertical}
   <div class="modal">
     <div class="modal-title" id="m-log-title">Add logistics item</div>
     <input type="hidden" id="ilog-id">
-    <div class="fg"><label class="fl">Item name</label><input class="ti" id="ilog-item" placeholder="e.g. Foldable tables" style="width:100%"></div>
+    <div class="frow">
+      <div class="fg" style="flex:2"><label class="fl">Item name</label><input class="ti" id="ilog-item" placeholder="e.g. Foldable tables" style="width:100%"></div>
+      <div class="fg" style="flex:1"><label class="fl">Category</label>
+        <input class="ti" id="ilog-cat" placeholder="e.g. Ball Pit, Food, Decor" style="width:100%" list="cat-suggestions">
+        <datalist id="cat-suggestions">
+          <option value="Baby Space">
+          <option value="Ball Pit (Cube)">
+          <option value="Atrium / Food">
+          <option value="Cyanotype">
+          <option value="Audi / Activities">
+          <option value="Lift Lobby">
+          <option value="General">
+        </datalist>
+      </div>
+    </div>
     <div class="frow">
       <div class="fg" style="flex:1"><label class="fl">Source / supplier</label><input class="ti" id="ilog-source" placeholder="Where to buy" style="width:100%"></div>
       <div class="fg" style="flex:1"><label class="fl">Link / URL</label><input class="ti" id="ilog-link" placeholder="https://…" style="width:100%"></div>
@@ -696,9 +710,14 @@ async function init(){
       document.getElementById('loading-screen').style.display='none';
       document.getElementById('app').style.display='flex';
       setSyncStatus('live');
-      refreshCurrentTab();
+      // Don't re-render if user is actively typing in an input/textarea
+      const active = document.activeElement;
+      const isTyping = active && (active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT');
+      if(!isTyping){
+        refreshCurrentTab();
+        buildListNav();
+      }
       updateSidebar();
-      buildListNav();
     });
   } catch(err) {
     document.getElementById('loading-screen').innerHTML =
@@ -1195,70 +1214,78 @@ window.saveRunItem=function(){
 };
 
 // ── LOGISTICS ─────────────────────────────────────────────────────
+function logTable(items){
+  const sc={pending:'ls-pending',ordered:'ls-ordered',received:'ls-received',na:'ls-na'};
+  if(!items.length) return '<div style="font-size:12px;color:var(--t3);padding:8px 4px">No items yet.</div>';
+  let rows=items.map(i=>{
+    const rowCost=(parseFloat(i.unit)||0)*(parseFloat(i.qty)||1);
+    return `<tr>
+      <td><input class="log-inp" value="${(i.item||'').replace(/"/g,'&quot;')}" placeholder="Item" onchange="editLog('${i.id}','item',this.value)" style="min-width:110px"></td>
+      <td><input class="log-inp" value="${(i.source||'').replace(/"/g,'&quot;')}" placeholder="Supplier" onchange="editLog('${i.id}','source',this.value)" style="min-width:80px"></td>
+      <td>${i.link?`<a href="${i.link}" target="_blank" style="color:var(--a2);font-size:11px">🔗</a>`:`<input class="log-inp" value="" placeholder="URL" onchange="editLog('${i.id}','link',this.value)" style="min-width:70px">`}</td>
+      <td><span style="color:var(--t3);font-size:10px">$</span><input class="log-inp" type="number" value="${i.unit||''}" placeholder="0" onchange="editLog('${i.id}','unit',this.value)" style="width:55px"></td>
+      <td><input class="log-inp" type="number" value="${i.qty||''}" placeholder="1" onchange="editLog('${i.id}','qty',this.value)" style="width:40px"></td>
+      <td class="log-cost" style="white-space:nowrap">${rowCost>0?'$'+rowCost.toFixed(2):'—'}</td>
+      <td><input class="log-inp" value="${(i.owner||'').replace(/"/g,'&quot;')}" placeholder="Owner" onchange="editLog('${i.id}','owner',this.value)" style="min-width:70px"></td>
+      <td><select class="log-status ${sc[i.status]||'ls-pending'}" onchange="editLog('${i.id}','status',this.value);this.className='log-status '+{'pending':'ls-pending','ordered':'ls-ordered','received':'ls-received','na':'ls-na'}[this.value]">
+        <option value="pending" ${i.status==='pending'?'selected':''}>Pending</option>
+        <option value="ordered" ${i.status==='ordered'?'selected':''}>Ordered</option>
+        <option value="received" ${i.status==='received'?'selected':''}>Received</option>
+        <option value="na" ${i.status==='na'?'selected':''}>N/A</option>
+      </select></td>
+      <td><input class="log-inp" value="${(i.remarks||'').replace(/"/g,'&quot;')}" placeholder="Remarks" onchange="editLog('${i.id}','remarks',this.value)" style="min-width:90px"></td>
+      <td class="log-del"><button class="ic-btn r log-del" onclick="deleteLog('${i.id}')">✕</button></td>
+    </tr>`;
+  }).join('');
+  return `<div class="log-wrap"><table class="log-table">
+    <thead><tr><th>Item</th><th>Source</th><th>Link</th><th>Unit $</th><th>Qty</th><th>Total</th><th>Owner</th><th>Status</th><th>Remarks</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
 function renderLogistics(){
   if(!state) return;
-  const items = Object.values(state.logistics||{});
-  const sc = {pending:'ls-pending',ordered:'ls-ordered',received:'ls-received',na:'ls-na'};
-  const sl = {pending:'Pending',ordered:'Ordered',received:'Received',na:'N/A'};
-
-  // summary
-  const totalCost = items.reduce((s,i)=>{
-    const c=(parseFloat(i.unit)||0)*(parseFloat(i.qty)||1);
-    return s+c;
-  },0);
-  const received = items.filter(i=>i.status==='received').length;
-  const pending = items.filter(i=>i.status==='pending').length;
-  const ordered = items.filter(i=>i.status==='ordered').length;
+  const allItems = Object.values(state.logistics||{});
+  const totalCost = allItems.reduce((s,i)=>(s+(parseFloat(i.unit)||0)*(parseFloat(i.qty)||1)),0);
+  const received = allItems.filter(i=>i.status==='received').length;
+  const pending = allItems.filter(i=>i.status==='pending').length;
+  const ordered = allItems.filter(i=>i.status==='ordered').length;
 
   let html = `<div class="log-summary">
-    <div class="log-sum-card"><div class="log-sum-label">Total items</div><div class="log-sum-val">${items.length}</div></div>
-    <div class="log-sum-card"><div class="log-sum-label">Est. total cost</div><div class="log-sum-val" style="color:var(--green)">$${totalCost.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div></div>
+    <div class="log-sum-card"><div class="log-sum-label">Total items</div><div class="log-sum-val">${allItems.length}</div></div>
+    <div class="log-sum-card"><div class="log-sum-label">Est. total</div><div class="log-sum-val" style="color:var(--green)">$${totalCost.toFixed(2)}</div></div>
     <div class="log-sum-card"><div class="log-sum-label">Pending</div><div class="log-sum-val" style="color:var(--amber)">${pending}</div></div>
     <div class="log-sum-card"><div class="log-sum-label">Ordered</div><div class="log-sum-val" style="color:var(--a2)">${ordered}</div></div>
     <div class="log-sum-card"><div class="log-sum-label">Received</div><div class="log-sum-val" style="color:var(--green)">${received}</div></div>
   </div>`;
 
-  html += `<div class="log-wrap"><table class="log-table">
-    <thead><tr>
-      <th>Item</th>
-      <th>Source</th>
-      <th>Link</th>
-      <th>Unit cost</th>
-      <th>Qty</th>
-      <th>Total</th>
-      <th>Owner</th>
-      <th>Status</th>
-      <th>Remarks</th>
-      <th></th>
-    </tr></thead>
-    <tbody>`;
+  // Group by category
+  const cats = {};
+  allItems.forEach(i=>{
+    const cat = i.logCat||'General';
+    if(!cats[cat]) cats[cat]=[];
+    cats[cat].push(i);
+  });
+  const catOrder = Object.keys(cats).sort((a,b)=>a==='General'?1:b==='General'?-1:a.localeCompare(b));
 
-  items.forEach(i=>{
-    const rowCost = (parseFloat(i.unit)||0)*(parseFloat(i.qty)||1);
-    html += `<tr>
-      <td><input class="log-inp" value="${i.item||''}" placeholder="Item name" onchange="editLog('${i.id}','item',this.value)" style="min-width:120px"></td>
-      <td><input class="log-inp" value="${i.source||''}" placeholder="Supplier" onchange="editLog('${i.id}','source',this.value)" style="min-width:90px"></td>
-      <td style="max-width:120px">${i.link?`<a href="${i.link}" target="_blank" style="color:var(--a2);font-size:11px;word-break:break-all">🔗 Link</a> <input class="log-inp" value="${i.link||''}" onchange="editLog('${i.id}','link',this.value)" style="display:none">`:
-      `<input class="log-inp" value="" placeholder="https://…" onchange="editLog('${i.id}','link',this.value)" style="min-width:80px">`}</td>
-      <td><span style="color:var(--t3);font-size:11px">$</span><input class="log-inp" type="number" value="${i.unit||''}" placeholder="0.00" onchange="editLog('${i.id}','unit',this.value);renderLogistics()" style="width:60px"></td>
-      <td><input class="log-inp" type="number" value="${i.qty||''}" placeholder="1" onchange="editLog('${i.id}','qty',this.value);renderLogistics()" style="width:45px"></td>
-      <td class="log-cost">${rowCost>0?'$'+rowCost.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}):'—'}</td>
-      <td><input class="log-inp" value="${i.owner||''}" placeholder="Owner" onchange="editLog('${i.id}','owner',this.value)" style="min-width:80px"></td>
-      <td>
-        <select class="log-status ${sc[i.status]||'ls-pending'}" onchange="editLog('${i.id}','status',this.value);this.className='log-status '+{'pending':'ls-pending','ordered':'ls-ordered','received':'ls-received','na':'ls-na'}[this.value]">
-          <option value="pending" ${i.status==='pending'?'selected':''}>Pending</option>
-          <option value="ordered" ${i.status==='ordered'?'selected':''}>Ordered</option>
-          <option value="received" ${i.status==='received'?'selected':''}>Received</option>
-          <option value="na" ${i.status==='na'?'selected':''}>N/A</option>
-        </select>
-      </td>
-      <td><input class="log-inp" value="${i.remarks||''}" placeholder="Remarks" onchange="editLog('${i.id}','remarks',this.value)" style="min-width:100px"></td>
-      <td class="log-del"><button class="ic-btn r log-del" onclick="deleteLog('${i.id}')">✕</button></td>
-    </tr>`;
+  catOrder.forEach(cat=>{
+    const catItems = cats[cat];
+    const catTotal = catItems.reduce((s,i)=>(s+(parseFloat(i.unit)||0)*(parseFloat(i.qty)||1)),0);
+    const catId = 'cat-'+cat.replace(/[^a-z0-9]/gi,'');
+    html += `<div style="margin-bottom:1.2rem">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <div style="font-family:'Syne',sans-serif;font-size:14px;font-weight:700;flex:1">${cat}</div>
+        <span style="font-size:11px;color:var(--t3)">${catItems.length} items</span>
+        ${catTotal>0?`<span style="font-size:11px;color:var(--green);font-weight:600">$${catTotal.toFixed(2)}</span>`:''}
+        <button class="btn" style="font-size:11px;padding:3px 10px" onclick="openLogItem('${cat.replace(/'/g,'\\'')}')" >+ Add</button>
+        <button class="btn d" style="font-size:11px;padding:3px 8px" onclick="deleteCat('${cat.replace(/'/g,'\\'')}')" title="Delete whole category">✕ Cat</button>
+      </div>
+      ${logTable(catItems)}
+    </div>`;
   });
 
-  html += `</tbody></table></div>`;
-  html += `<div style="margin-top:10px;font-size:11px;color:var(--t3)">Edit cells directly in the table &middot; hover rows to delete &middot; total cost auto-calculates</div>`;
+  if(!catOrder.length) html += '<div style="color:var(--t3);font-size:13px;padding:1rem 0">No items yet. Click + Add item to start.</div>';
+  html += `<div style="margin-top:6px;font-size:11px;color:var(--t3)">Edit cells inline &middot; hover rows to delete &middot; use + Add item to create new categories</div>`;
   document.getElementById('body-logistics').innerHTML = html;
 }
 
@@ -1267,12 +1294,18 @@ window.editLog = function(id,field,val){
   fbUpdate('logistics/'+id, u);
 };
 window.deleteLog = function(id){ fbRemove('logistics/'+id); };
+window.deleteCat = function(cat){
+  if(!confirm('Delete ALL items in "'+cat+'"?')) return;
+  const items=Object.values(state.logistics||{}).filter(i=>(i.logCat||'General')===cat);
+  items.forEach(i=>fbRemove('logistics/'+i.id));
+};
 
-window.openLogItem = function(){
+window.openLogItem = function(prefillCat){
   ['ilog-item','ilog-source','ilog-link','ilog-owner','ilog-remarks'].forEach(x=>document.getElementById(x).value='');
   ['ilog-unit','ilog-qty'].forEach(x=>document.getElementById(x).value='');
   document.getElementById('ilog-status').value='pending';
   document.getElementById('ilog-id').value='';
+  document.getElementById('ilog-cat').value=prefillCat||'';
   document.getElementById('m-log-title').textContent='Add logistics item';
   document.getElementById('ilog-ok').textContent='Add item';
   openM('m-log');
@@ -1284,6 +1317,7 @@ window.saveLogItem = function(){
   const id=document.getElementById('ilog-id').value||uid('lg');
   fbSet('logistics/'+id,{
     id, item,
+    logCat: document.getElementById('ilog-cat').value.trim()||'General',
     source:document.getElementById('ilog-source').value.trim(),
     link:document.getElementById('ilog-link').value.trim(),
     unit:document.getElementById('ilog-unit').value,
