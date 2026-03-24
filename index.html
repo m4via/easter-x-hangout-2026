@@ -1277,8 +1277,8 @@ function renderLogistics(){
         <div style="font-family:'Syne',sans-serif;font-size:14px;font-weight:700;flex:1">${cat}</div>
         <span style="font-size:11px;color:var(--t3)">${catItems.length} items</span>
         ${catTotal>0?`<span style="font-size:11px;color:var(--green);font-weight:600">$${catTotal.toFixed(2)}</span>`:''}
-        <button class="btn" style="font-size:11px;padding:3px 10px" onclick="openLogItem('${cat.replace(/'/g,'\\'')}')" >+ Add</button>
-        <button class="btn d" style="font-size:11px;padding:3px 8px" onclick="deleteCat('${cat.replace(/'/g,'\\'')}')" title="Delete whole category">✕ Cat</button>
+        <button class="btn" style="font-size:11px;padding:3px 10px" onclick="openLogItem(this.dataset.cat)" data-cat="${cat}">+ Add</button>
+        <button class="btn d" style="font-size:11px;padding:3px 8px" onclick="deleteCat(this.dataset.cat)" data-cat="${cat}" title="Delete category">✕ Cat</button>
       </div>
       ${logTable(catItems)}
     </div>`;
