@@ -885,17 +885,18 @@ function renderList(tabId){
     const ownerPill=t.owner?`<span class="tmeta-pill owner">👤 ${t.owner}</span>`:'';
     const catPill=t.cat?`<span class="tmeta-pill">🏷 ${t.cat}</span>`:'';
     const hasMeta=t.owner||t.cat||t.deadline;
+    const safeNotes=(t.notes||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     html+=`<div class="tr" style="flex-direction:column;align-items:stretch;padding:8px 4px;gap:0">
       <div style="display:flex;align-items:flex-start;gap:8px">
-        <div class="chk ${t.done?'done':''}" onclick="toggleTask('${lid}','${t.id}')" style="margin-top:2px;flex-shrink:0"></div>
-        <div class="tr-body" style="flex:1;cursor:pointer" onclick="openEditTask('${lid}','${t.id}')"><span class="tr-text ${t.done?'done':''}">${t.text}</span>${tag}</div>
+        <div class="chk ${t.done?'done':''}" data-lid="${lid}" data-tid="${t.id}" onclick="handleToggle(this)" style="margin-top:2px;flex-shrink:0"></div>
+        <div class="tr-body" style="flex:1;cursor:pointer" data-lid="${lid}" data-tid="${t.id}" onclick="handleEditTask(this)"><span class="tr-text ${t.done?'done':''}">${t.text}</span>${tag}</div>
         <div class="tr-acts" style="display:flex;gap:3px;flex-shrink:0">
-          <button class="ic-btn" onclick="openEditTask('${lid}','${t.id}')" title="Edit details">✎</button>
-          <button class="ic-btn r" onclick="deleteTask('${lid}','${t.id}')">✕</button>
+          <button class="ic-btn" data-lid="${lid}" data-tid="${t.id}" onclick="handleEditTask(this)" title="Edit details">✎</button>
+          <button class="ic-btn r" data-lid="${lid}" data-tid="${t.id}" onclick="handleDeleteTask(this)">✕</button>
         </div>
       </div>
       ${hasMeta?`<div class="task-meta" style="padding-left:23px">${ownerPill}${catPill}${dlPill}</div>`:''}
-      ${t.notes?`<div class="task-notes" style="margin-left:23px">${t.notes}</div>`:''}
+      ${safeNotes?`<div class="task-notes" style="margin-left:23px">${safeNotes}</div>`:''}
     </div>`;
   });
 
@@ -909,18 +910,31 @@ function renderList(tabId){
   if(el) el.innerHTML = html;
 }
 
+window.handleToggle = function(el){
+  const lid=el.dataset.lid, tid=el.dataset.tid;
+  const t=((state.lists[lid]||{}).tasks||{})[tid]; if(!t) return;
+  fbUpdate('lists/'+lid+'/tasks/'+tid, {done:!t.done});
+};
+window.handleEditTask = function(el){
+  const lid=el.dataset.lid, tid=el.dataset.tid;
+  openEditTask(lid,tid);
+};
+window.handleDeleteTask = function(el){
+  const lid=el.dataset.lid, tid=el.dataset.tid;
+  fbRemove('lists/'+lid+'/tasks/'+tid);
+};
 window.toggleTask = function(lid,tid){
-  const t = state.lists[lid].tasks[tid];
-  fbUpdate(`lists/${lid}/tasks/${tid}`, {done:!t.done});
+  const t=((state.lists[lid]||{}).tasks||{})[tid]; if(!t) return;
+  fbUpdate('lists/'+lid+'/tasks/'+tid, {done:!t.done});
 };
 window.editTaskText = function(lid,tid,val){
-  if(val.trim()) fbUpdate(`lists/${lid}/tasks/${tid}`, {text:val.trim()});
+  if(val.trim()) fbUpdate('lists/'+lid+'/tasks/'+tid, {text:val.trim()});
 };
 window.editTaskUrg = function(lid,tid,val){
-  fbUpdate(`lists/${lid}/tasks/${tid}`, {urg:val});
+  fbUpdate('lists/'+lid+'/tasks/'+tid, {urg:val});
 };
 window.deleteTask = function(lid,tid){
-  fbRemove(`lists/${lid}/tasks/${tid}`);
+  fbRemove('lists/'+lid+'/tasks/'+tid);
 };
 window.quickAdd = function(lid){
   const inp = document.getElementById('qi-'+lid);
@@ -1111,44 +1125,92 @@ window.saveVendor=function(){
 // ── BUDGET ────────────────────────────────────────────────────────
 function renderBudget(){
   if(!state||!state.budget) return;
-  const items=Object.values(state.budget.items||{});
-  const te=items.reduce((s,i)=>s+(parseFloat(i.est)||0),0);
-  const ta=items.reduce((s,i)=>s+(parseFloat(i.act)||0),0);
+  const manualItems=Object.values(state.budget.items||{});
+
+  // Build logistics summary grouped by category
+  const logItems=Object.values(state.logistics||{});
+  const logCats={};
+  logItems.forEach(i=>{
+    const cat=i.logCat||'General';
+    if(!logCats[cat]) logCats[cat]={est:0,act:0};
+    const cost=(parseFloat(i.unit)||0)*(parseFloat(i.qty)||1);
+    logCats[cat].est+=cost;
+    // count received items as actual spend
+    if(i.status==='received'||i.status==='ordered') logCats[cat].act+=cost;
+  });
+
+  // Combined totals
+  const te=manualItems.reduce((s,i)=>s+(parseFloat(i.est)||0),0);
+  const ta=manualItems.reduce((s,i)=>s+(parseFloat(i.act)||0),0);
+  const logEst=Object.values(logCats).reduce((s,c)=>s+c.est,0);
+  const logAct=Object.values(logCats).reduce((s,c)=>s+c.act,0);
+  const totalEst=te+logEst;
+  const totalAct=ta+logAct;
   const tb=parseFloat(state.budget.total)||0;
-  const pct=tb?Math.min(Math.round(ta/tb*100),100):0;
+  const pct=tb?Math.min(Math.round(totalAct/tb*100),100):0;
   const bc=pct>90?'var(--red)':pct>70?'var(--amber)':'var(--green)';
 
   let html=`<div class="srow">
     <div class="sc"><div class="sl">Total budget</div><div class="sv">$${tb?Math.round(tb).toLocaleString():'–'}</div></div>
-    <div class="sc"><div class="sl">Spent</div><div class="sv">$${Math.round(ta).toLocaleString()}</div></div>
-    <div class="sc"><div class="sl">Remaining</div><div class="sv" style="color:${ta>tb&&tb?'var(--red)':'var(--green)'}">$${Math.round(tb-ta).toLocaleString()}</div></div>
+    <div class="sc"><div class="sl">Est. spend</div><div class="sv">$${Math.round(totalEst).toLocaleString()}</div></div>
+    <div class="sc"><div class="sl">Remaining</div><div class="sv" style="color:${totalEst>tb&&tb?'var(--red)':'var(--green)'}">$${Math.round(tb-totalEst).toLocaleString()}</div></div>
   </div>
   <div class="card" style="margin-bottom:.9rem">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:${tb?'8px':'0'}">
       <span style="color:var(--t3)">Total budget: $</span>
       <input class="ti" type="number" value="${state.budget.total}" placeholder="Enter total" style="max-width:160px" onchange="fbSet('budget/total',this.value)">
     </div>
-    ${tb?`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-bottom:4px"><span>$${Math.round(ta).toLocaleString()} of $${Math.round(tb).toLocaleString()} spent</span><span>${pct}%</span></div><div class="bbar"><div class="bfill" style="width:${pct}%;background:${bc}"></div></div>`:''}
+    ${tb?`<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-bottom:4px"><span>Est. $${Math.round(totalEst).toLocaleString()} of $${Math.round(tb).toLocaleString()} budget</span><span>${pct}%</span></div><div class="bbar"><div class="bfill" style="width:${pct}%;background:${bc}"></div></div>`:''}
   </div>
+
+  <!-- Logistics-synced section -->
+  ${logItems.length?`<div class="card" style="margin-bottom:.9rem">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <div style="font-family:'Syne',sans-serif;font-size:14px;font-weight:700;flex:1">From logistics sheet</div>
+      <span style="font-size:11px;color:var(--t3)">Auto-synced · edit in Logistics tab</span>
+    </div>
+    <table class="bt"><thead><tr><th>Category</th><th>Est. cost ($)</th><th>Ordered/received ($)</th></tr></thead><tbody>
+    ${Object.entries(logCats).sort((a,b)=>a[0].localeCompare(b[0])).map(([cat,vals])=>`<tr>
+      <td>${cat}</td>
+      <td style="text-align:right;color:var(--t2)">$${vals.est.toFixed(2)}</td>
+      <td style="text-align:right;color:var(--green)">$${vals.act.toFixed(2)}</td>
+    </tr>`).join('')}
+    </tbody><tfoot><tr style="border-top:0.5px solid var(--bd2)">
+      <td style="font-weight:600;padding-top:8px">Subtotal</td>
+      <td style="font-weight:600;padding-top:8px;text-align:right">$${logEst.toFixed(2)}</td>
+      <td style="font-weight:600;padding-top:8px;text-align:right;color:var(--green)">$${logAct.toFixed(2)}</td>
+    </tr></tfoot></table>
+    <div style="font-size:10px;color:var(--t3);margin-top:8px">Ordered + Received items count as actual spend</div>
+  </div>`:''}
+
+  <!-- Manual budget items -->
   <div class="card">
-    <table class="bt"><thead><tr><th>Category</th><th>Estimated ($)</th><th>Actual ($)</th><th></th></tr></thead><tbody>`;
-
-  items.forEach(item=>{
-    html+=`<tr>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <div style="font-family:'Syne',sans-serif;font-size:14px;font-weight:700;flex:1">Additional budget items</div>
+      <button class="btn p" style="font-size:11px;padding:4px 10px" onclick="openBudgetItem()">+ Add</button>
+    </div>
+    ${manualItems.length?`<table class="bt"><thead><tr><th>Category</th><th>Estimated ($)</th><th>Actual ($)</th><th></th></tr></thead><tbody>
+    ${manualItems.map(item=>`<tr>
       <td><span>${item.label}</span></td>
-      <td><input class="ti" type="number" value="${item.est}" placeholder="0" onchange="editBItem('${item.id}','est',this.value)" style="width:85px;text-align:right"></td>
-      <td><input class="ti" type="number" value="${item.act}" placeholder="0" onchange="editBItem('${item.id}','act',this.value)" style="width:85px;text-align:right"></td>
-      <td class="bt-del"><button class="ic-btn r bt-del" onclick="deleteBItem('${item.id}')">✕</button></td>
-    </tr>`;
-  });
+      <td><input class="ti" type="number" value="${item.est}" placeholder="0" data-id="${item.id}" data-field="est" onchange="editBItem(this.dataset.id,this.dataset.field,this.value)" style="width:85px;text-align:right"></td>
+      <td><input class="ti" type="number" value="${item.act}" placeholder="0" data-id="${item.id}" data-field="act" onchange="editBItem(this.dataset.id,this.dataset.field,this.value)" style="width:85px;text-align:right"></td>
+      <td class="bt-del"><button class="ic-btn r bt-del" data-id="${item.id}" onclick="deleteBItem(this.dataset.id)">✕</button></td>
+    </tr>`).join('')}
+    </tbody><tfoot><tr style="border-top:0.5px solid var(--bd2)">
+      <td style="font-weight:600;padding-top:8px">Subtotal</td>
+      <td style="font-weight:600;padding-top:8px;text-align:right">$${Math.round(te).toLocaleString()}</td>
+      <td style="font-weight:600;padding-top:8px;text-align:right">$${Math.round(ta).toLocaleString()}</td>
+      <td></td>
+    </tr></tfoot></table>`:'<div style="font-size:12px;color:var(--t3);padding:4px 0">No extra items. Use + Add for things not in the logistics sheet.</div>'}
+  </div>
 
-  html+=`</tbody><tfoot><tr style="border-top:0.5px solid var(--bd2)">
-    <td style="font-weight:600;padding-top:8px">Total</td>
-    <td style="font-weight:600;padding-top:8px;text-align:right">$${Math.round(te).toLocaleString()}</td>
-    <td style="font-weight:600;padding-top:8px;text-align:right;color:${ta>te&&te?'var(--red)':'var(--green)'}">$${Math.round(ta).toLocaleString()}</td>
-    <td></td>
-  </tr></tfoot></table>
-  <div style="font-size:10px;color:var(--t3);margin-top:8px">Click category names to rename &middot; hover rows to delete</div>
+  <!-- Grand total -->
+  <div class="card" style="background:var(--bg3)">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700">Grand total estimate</div>
+      <div style="font-family:'Syne',sans-serif;font-size:22px;font-weight:700;color:${totalEst>tb&&tb?'var(--red)':'var(--green)'}">$${Math.round(totalEst).toLocaleString()}</div>
+    </div>
+    <div style="font-size:11px;color:var(--t3);margin-top:4px">Logistics ($${Math.round(logEst).toLocaleString()}) + additional items ($${Math.round(te).toLocaleString()})</div>
   </div>`;
 
   document.getElementById('body-budget').innerHTML=html;
